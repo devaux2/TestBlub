@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Simple Image Viewer</title>
+  <title>Simple Image Viewer with Loading Bar</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Three.js and GSAP libraries -->
@@ -14,15 +14,21 @@
       background: #000;
       font-family: sans-serif;
     }
-    /* Basic styling for the folder list */
+
+    /* Folder list styling */
     #folder-list {
       position: absolute;
       top: 10px;
       left: 10px;
-      z-index: 999;
-      background-color: rgba(0,0,0,0.5);
+      z-index: 9999;
+      background-color: rgba(0,0,0,0.3);
       padding: 10px;
       border-radius: 5px;
+      transition: opacity 0.3s;
+      opacity: 0.1; /* Faded by default */
+    }
+    #folder-list:hover {
+      opacity: 1;   /* Fully visible on hover */
     }
     #folder-list button {
       display: block;
@@ -37,11 +43,38 @@
     #folder-list button:hover {
       background: #444;
     }
+
+    /* Progress bar container */
+    #progress-container {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 300px;
+      height: 20px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 10px;
+      overflow: hidden;
+      display: none; /* hidden by default */
+      z-index: 9999;
+    }
+    /* Actual progress bar */
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: #00ff00;
+      transition: width 0.2s;
+    }
   </style>
 </head>
 <body>
-  <!-- A container for our dynamic folder list -->
+  <!-- Folder list (left side) -->
   <div id="folder-list"></div>
+
+  <!-- Progress bar (top center) -->
+  <div id="progress-container">
+    <div id="progress-bar"></div>
+  </div>
 
   <script>
     /************************************************
@@ -54,16 +87,16 @@
       0.1,
       1000
     );
+    camera.position.z = 5;
+
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    camera.position.z = 5;
-
     /************************************************
      * 2) Folder/Path Definitions
      ************************************************/
-    // Define folder groups and naming patterns
+    // Adjust these to match your actual folders
     const folderGroups = {
       fangAndNeo: {
         folders: [
@@ -123,10 +156,11 @@
     };
 
     /************************************************
-     * 3) Build a Grouped Object of All Images
+     * 3) Build a Grouped Object of All File Paths
      ************************************************/
-    async function getGroupedImages() {
-      // Generate all possible paths
+    let groupedImages = {};  // { folderName: [ "images/folder/file.png", ... ] }
+
+    function buildGroupedImagePaths() {
       const paths = [];
       Object.values(folderGroups).forEach(group => {
         group.folders.forEach(folder => {
@@ -140,7 +174,7 @@
         });
       });
 
-      // Group by folder
+      // Group them by folder
       const grouped = {};
       for (const path of paths) {
         const parts = path.split('/');
@@ -169,17 +203,13 @@
           return secA - secB;
         });
       }
-
       return grouped;
     }
 
     /************************************************
-     * 4) UI for Folder Selection
+     * 4) Folder List (Fade UI)
      ************************************************/
-    let groupedImages = {};   // Holds all images grouped by folder
-    let images = [];          // Currently selected folder's images
-
-    function createFolderList(folderNames) {
+    function createFolderListUI(folderNames) {
       const folderListDiv = document.getElementById('folder-list');
       folderListDiv.innerHTML = ''; // Clear any existing buttons
 
@@ -189,24 +219,92 @@
         btn.textContent = folder.replace(/_/g, ' ');
         btn.addEventListener('click', () => {
           // Switch to this folder
-          images = groupedImages[folder];
-          currentIndex = 0;
-          loadPhotos();
+          loadFolderTextures(folder);
         });
         folderListDiv.appendChild(btn);
       });
     }
 
     /************************************************
-     * 5) Create Photo Plane (No Custom Shader)
+     * 5) Loading Bar (Progress)
      ************************************************/
-    function createPhotoPlane(texture, position) {
+    const progressContainer = document.getElementById('progress-container');
+    const progressBar = document.getElementById('progress-bar');
+
+    function showProgressBar() {
+      progressContainer.style.display = 'block';
+      progressBar.style.width = '0%';
+    }
+
+    function hideProgressBar() {
+      progressContainer.style.display = 'none';
+    }
+
+    function updateProgressBar(percent) {
+      progressBar.style.width = percent + '%';
+    }
+
+    /************************************************
+     * 6) Preload All Textures in a Folder
+     ************************************************/
+    const textureLoader = new THREE.TextureLoader();
+    let loadedTextures = {}; // { folderName: [Texture, Texture, ...] }
+
+    function loadTexture(url) {
+      return new Promise((resolve, reject) => {
+        textureLoader.load(url, resolve, undefined, reject);
+      });
+    }
+
+    async function loadFolderTextures(folder) {
+      // If already loaded, just switch
+      if (loadedTextures[folder]) {
+        currentFolderName = folder;
+        currentIndex = 0;
+        loadPhotos();
+        return;
+      }
+
+      const filePaths = groupedImages[folder];
+      if (!filePaths || filePaths.length === 0) return;
+
+      showProgressBar();
+      const textures = new Array(filePaths.length);
+      let loadedCount = 0;
+
+      // Load each texture and update progress
+      await Promise.all(filePaths.map((path, i) =>
+        loadTexture(path).then(tex => {
+          textures[i] = tex;
+          loadedCount++;
+          updateProgressBar(Math.floor((loadedCount / filePaths.length) * 100));
+        }).catch(err => {
+          console.error("Error loading:", path, err);
+          loadedCount++;
+          updateProgressBar(Math.floor((loadedCount / filePaths.length) * 100));
+        })
+      ));
+
+      // Store the loaded textures
+      loadedTextures[folder] = textures;
+      hideProgressBar();
+
+      // Switch to this folder
+      currentFolderName = folder;
+      currentIndex = 0;
+      loadPhotos();
+    }
+
+    /************************************************
+     * 7) Create Photo Plane (No Dissolve)
+     ************************************************/
+    function createPhotoPlane(texture, position, isCenter = false) {
       const imageAspect = texture.image.width / texture.image.height;
+      // Default size
       const displayWidth = 3;
       const displayHeight = displayWidth / imageAspect;
 
       const geometry = new THREE.PlaneGeometry(displayWidth, displayHeight);
-      // Use a basic material (no dissolve/fade shader)
       const material = new THREE.MeshBasicMaterial({
         map: texture,
         transparent: true
@@ -215,64 +313,59 @@
       const plane = new THREE.Mesh(geometry, material);
       plane.position.copy(position);
       plane.userData.baseRotation = plane.rotation.y;
+
+      // Scale up the center image
+      if (isCenter) {
+        plane.scale.set(2, 2, 1); // 2x bigger
+      }
       return plane;
     }
 
     function getPhotoPosition(t) {
-      // Simple arrangement: left = -1, center = 0, right = +1
-      // multiplied by some factor for spacing
+      // t: -1 => left, 0 => center, 1 => right
       const x = t * 4;
       const z = -Math.abs(t) * 2;
       return new THREE.Vector3(x, 0, z);
     }
 
-    // Helper to load a texture with a Promise
-    const textureLoader = new THREE.TextureLoader();
-    function loadTexture(url) {
-      return new Promise((resolve, reject) => {
-        textureLoader.load(url, resolve, undefined, reject);
+    /************************************************
+     * 8) Loading Photos (Previous, Current, Next)
+     ************************************************/
+    let currentFolderName = '';
+    let currentIndex = 0;
+    let photoObjects = [];
+    let isAnimating = false;
+
+    function loadPhotos() {
+      // Remove existing photos from scene
+      photoObjects.forEach(obj => scene.remove(obj));
+      photoObjects = [];
+
+      const texArray = loadedTextures[currentFolderName];
+      if (!texArray || texArray.length === 0) return;
+
+      // Indices for prev, current, next
+      const length = texArray.length;
+      const indices = [
+        (currentIndex - 1 + length) % length,
+        currentIndex,
+        (currentIndex + 1) % length
+      ];
+
+      indices.forEach((idx, i) => {
+        const texture = texArray[idx];
+        const position = getPhotoPosition(i - 1);
+        const isCenter = (i === 1);
+        const photo = createPhotoPlane(texture, position, isCenter);
+        photo.rotation.y = (i - 1) * -0.2;
+        photo.userData.baseRotation = photo.rotation.y;
+        scene.add(photo);
+        photoObjects.push(photo);
       });
     }
 
     /************************************************
-     * 6) Photo Loading
-     ************************************************/
-    let photoObjects = [];
-    let currentIndex = 0;
-    let isAnimating = false;
-
-    async function loadPhotos() {
-      // Remove existing photos
-      photoObjects.forEach(obj => scene.remove(obj));
-      photoObjects = [];
-
-      // If no images in this folder, just return
-      if (!images || images.length === 0) return;
-
-      // Indices for prev, current, next
-      const indices = [
-        (currentIndex - 1 + images.length) % images.length,
-        currentIndex,
-        (currentIndex + 1) % images.length
-      ];
-
-      try {
-        const texArray = await Promise.all(indices.map(i => loadTexture(images[i])));
-        texArray.forEach((texture, i) => {
-          const position = getPhotoPosition(i - 1);
-          const photo = createPhotoPlane(texture, position);
-          photo.rotation.y = (i - 1) * -0.2;
-          photo.userData.baseRotation = photo.rotation.y;
-          scene.add(photo);
-          photoObjects.push(photo);
-        });
-      } catch (error) {
-        console.error('Error loading textures:', error);
-      }
-    }
-
-    /************************************************
-     * 7) Navigation (Simple Slide, No Fade)
+     * 9) Navigation (Simple Slide, No Fade)
      ************************************************/
     function animateTransition(direction) {
       if (isAnimating) return;
@@ -282,12 +375,12 @@
       const tl = gsap.timeline({
         onComplete: () => {
           isAnimating = false;
-          currentIndex = (currentIndex + direction + images.length) % images.length;
+          const length = loadedTextures[currentFolderName].length;
+          currentIndex = (currentIndex + direction + length) % length;
           loadPhotos();
         }
       });
 
-      // Slide the three planes left/right
       [photoObjects[0], photoObjects[1], photoObjects[2]].forEach((photo, i) => {
         if (!photo) return;
         const posIndex = i - 1; // -1, 0, 1
@@ -311,13 +404,13 @@
     }
 
     function navigate(direction) {
-      if (!isAnimating) {
+      if (!isAnimating && currentFolderName) {
         animateTransition(direction);
       }
     }
 
     /************************************************
-     * 8) Interaction (Mouse, Click, Keys)
+     * 10) Interaction (Mouse, Click, Keys)
      ************************************************/
     let mouseX = 0;
     let mouseY = 0;
@@ -342,7 +435,7 @@
     });
 
     /************************************************
-     * 9) Animation Loop
+     * 11) Animation Loop
      ************************************************/
     function animate() {
       requestAnimationFrame(animate);
@@ -358,7 +451,7 @@
     }
 
     /************************************************
-     * 10) Resize Handling
+     * 12) Resize Handling
      ************************************************/
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -367,18 +460,18 @@
     });
 
     /************************************************
-     * 11) Initialize Everything
+     * 13) Initialize Everything
      ************************************************/
-    async function init() {
-      groupedImages = await getGroupedImages();
-      const folderNames = Object.keys(groupedImages).sort();
-      createFolderList(folderNames);
+    function init() {
+      groupedImages = buildGroupedImagePaths();
 
-      // Default to the first folder in the list (if any)
+      // Create folder list
+      const folderNames = Object.keys(groupedImages).sort();
+      createFolderListUI(folderNames);
+
+      // Optionally, auto-load the first folder
       if (folderNames.length > 0) {
-        images = groupedImages[folderNames[0]];
-        currentIndex = 0;
-        loadPhotos();
+        loadFolderTextures(folderNames[0]);
       }
     }
 
