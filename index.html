@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Viewer</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <style>
+        body { 
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+        }
+    </style>
+</head>
+<body>
+    <script>
+        // Function to recursively scan the images directory
+        async function getImagePaths() {
+            // This will be replaced by your actual image paths when you deploy
+            const imagePaths = [
+                'images/Fang_24CT_Gold/1_002.png',
+                'images/Fang_24CT_Gold/2_001.png',
+                // Add all your image paths here
+            ];
+            return imagePaths;
+        }
+
+        function sortImages(imageList) {
+            const groupedImages = {};
+            imageList.forEach(imagePath => {
+                const parts = imagePath.split('/');
+                const folder = parts[parts.length - 2];  // Get folder name
+                const filename = parts[parts.length - 1]; // Get filename
+                if (!groupedImages[folder]) {
+                    groupedImages[folder] = [];
+                }
+                groupedImages[folder].push(imagePath);
+            });
+
+            const sortedFolders = Object.keys(groupedImages).sort();
+
+            sortedFolders.forEach(folder => {
+                groupedImages[folder].sort((a, b) => {
+                    const fileA = a.split('/').pop();
+                    const fileB = b.split('/').pop();
+                    const numA = parseInt(fileA.match(/(\d+)_/)[1]);
+                    const numB = parseInt(fileB.match(/(\d+)_/)[1]);
+                    if (numA !== numB) return numA - numB;
+                    
+                    const secA = parseInt(fileA.match(/_(\d+)\./)[1]);
+                    const secB = parseInt(fileB.match(/_(\d+)\./)[1]);
+                    return secA - secB;
+                });
+            });
+
+            const sortedImages = [];
+            sortedFolders.forEach(folder => {
+                groupedImages[folder].forEach(filepath => {
+                    sortedImages.push(filepath);
+                });
+            });
+
+            return sortedImages;
+        }
+
+        // [Rest of your existing viewer code here, unchanged]
+        
+        // Initialize the viewer
+        async function initViewer() {
+            const imagePaths = await getImagePaths();
+            images = sortImages(imagePaths);
+            loadPhotos();
+        }
+
+        initViewer();
+    </script>
+</body>
+</html>
