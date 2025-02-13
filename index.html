@@ -1,236 +1,255 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Image Viewer</title>
+  <title>Simple Image Viewer</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Three.js and GSAP libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
   <style>
-    body { 
+    body {
       margin: 0;
       overflow: hidden;
       background: #000;
+      font-family: sans-serif;
+    }
+    /* Basic styling for the folder list */
+    #folder-list {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 999;
+      background-color: rgba(0,0,0,0.5);
+      padding: 10px;
+      border-radius: 5px;
+    }
+    #folder-list button {
+      display: block;
+      margin: 5px 0;
+      padding: 5px 10px;
+      cursor: pointer;
+      background: #333;
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+    }
+    #folder-list button:hover {
+      background: #444;
     }
   </style>
 </head>
 <body>
+  <!-- A container for our dynamic folder list -->
+  <div id="folder-list"></div>
+
   <script>
+    /************************************************
+     * 1) Basic Three.js Scene Setup
+     ************************************************/
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(
+      75,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // Shader code
-    const dissolveVertexShader = `
-      varying vec2 vUv;
-      void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    camera.position.z = 5;
+
+    /************************************************
+     * 2) Folder/Path Definitions
+     ************************************************/
+    // Define folder groups and naming patterns
+    const folderGroups = {
+      fangAndNeo: {
+        folders: [
+          'Fang_24CT_Gold',
+          'Fang_Assassin',
+          'Fang_Blub_and_Friends',
+          'Fang_Ghost_Captain_Blue',
+          'Fang_Ghost_Captain_Green',
+          'Fang_Ghost_Captain_Red',
+          'Fang_Hyper_Pressure',
+          'Fang_King_Blub',
+          'Fang_Patrol',
+          'Fang_Royal_Blue',
+          'Fang_Rust_bucket_Blue',
+          'Fang_Rust_Bucket_Red',
+          'Fang_Rust_Bucket_Violet',
+          'Fang_Rust_bucket_Yellow',
+          'Fang_Seafoam',
+          'Neo_Shogun_24CT_Gold',
+          'Neo_Shogun_Assassin',
+          'Neo_Shogun_Blub_and_Friends',
+          'Neo_Shogun_Ghost_Captain_Blue',
+          'Neo_Shogun_Ghost_Captain_Green',
+          'Neo_Shogun_Ghost_Captain_Red',
+          'Neo_Shogun_Hyper_Pressure',
+          'Neo_Shogun_King_Blub',
+          'Neo_Shogun_Patrol',
+          'Neo_Shogun_Royal_Blue',
+          'Neo_Shogun_Rust_Bucket_Blue',
+          'Neo_Shogun_Rust_Bucket_Red',
+          'Neo_Shogun_Rust_Bucket_Violet',
+          'Neo_Shogun_Rust_Bucket_Yellow',
+          'Neo_Shogun_Seafoam'
+        ],
+        numbers: ['1_0002', '2_0001', '3_0000', '4_0003', '5_0004', '6_0005', '7_0006']
+      },
+      thelm: {
+        folders: [
+          'THELM_Blub_and_Friends_Silver',
+          'THELM_Deep_Sea_Gold',
+          'THELM_Ghost_Captain_Blue',
+          'THELM_Ghost_Captain_Green',
+          'THELM_Helm_Blub_and_Friends_Gold',
+          'THELM_Hyper_Pressure',
+          'THELM_Hyper_Pressure_Blubsessed',
+          'THELM_Hyper_Pressure_Trifecta',
+          'THELM_Hyper_Pressure_X',
+          'THELM_King_Blub',
+          'THELM_Navy_Seal',
+          'THELM_RustBucketBlue',
+          'THELM_RustBucketRed',
+          'THELM_RustBucketViolet',
+          'THELM_RustBucketYellow'
+        ],
+        numbers: ['1_0000', '2_0001', '3_0002', '4_0003', '6_0005', '7_0006']
       }
-    `;
+    };
 
-    const dissolveFragmentShader = `
-      uniform sampler2D tDiffuse;
-      uniform float dissolve;
-      uniform float pixelSize;
-      varying vec2 vUv;
-
-      float random(vec2 co) {
-          return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);
-      }
-
-      void main() {
-          vec2 pixelatedUV = floor(vUv * pixelSize) / pixelSize;
-          float r = random(pixelatedUV);
-          float fallStart = r * 0.3;
-          float fallProgress = max(0.0, (dissolve - fallStart) / (1.0 - fallStart));
-          float gravity = fallProgress * fallProgress * 0.0001;
-          vec2 offsetUV = vUv;
-          offsetUV.y -= gravity;
-          vec4 color = texture2D(tDiffuse, offsetUV);
-          float fade = 1.0 - fallProgress;
-          if(offsetUV.y < 0.0 || offsetUV.y > 1.0) {
-              fade = 0.0;
-          }
-          float visibility = step(dissolve, r) + (1.0 - step(fallStart, dissolve)) * fade;
-          gl_FragColor = vec4(color.rgb, visibility * color.a);
-      }
-    `;
-
-    let currentIndex = 0;
-    let isAnimating = false;
-    const photoObjects = [];
-    const textureLoader = new THREE.TextureLoader();
-
-    // Function to scan the images directory using defined folder groups and naming patterns.
-    async function getImagePaths() {
-      const folderGroups = {
-        fangAndNeo: {
-          folders: [
-            'Fang_24CT_Gold',
-            'Fang_Assassin',
-            'Fang_Blub_and_Friends',
-            'Fang_Ghost_Captain_Blue',
-            'Fang_Ghost_Captain_Green',
-            'Fang_Ghost_Captain_Red',
-            'Fang_Hyper_Pressure',
-            'Fang_King_Blub',
-            'Fang_Patrol',
-            'Fang_Royal_Blue',
-            'Fang_Rust_Bucket_Blue',
-            'Fang_Rust_Bucket_Red',
-            'Fang_Rust_Bucket_Violet',
-            'Fang_Rust_Bucket_Yellow',
-            'Fang_Seafoam',
-            'Neo_Shogun_24CT_Gold',
-            'Neo_Shogun_Assassin',
-            'Neo_Shogun_Blub_and_Friends',
-            'Neo_Shogun_Ghost_Captain_Blue',
-            'Neo_Shogun_Ghost_Captain_Green',
-            'Neo_Shogun_Ghost_Captain_Red',
-            'Neo_Shogun_Hyper_Pressure',
-            'Neo_Shogun_King_Blub',
-            'Neo_Shogun_Patrol',
-            'Neo_Shogun_Royal_Blue',
-            'Neo_Shogun_Rust_Bucket_Blue',
-            'Neo_Shogun_Rust_Bucket_Red',
-            'Neo_Shogun_Rust_Bucket_Violet',
-            'Neo_Shogun_Rust_Bucket_Yellow',
-            'Neo_Shogun_Seafoam'
-          ],
-          numbers: ['1_0002', '2_0001', '3_0000', '4_0003', '5_0004', '6_0005', '7_0006']
-        },
-        thelm: {
-          folders: [
-            'THELM_Blub_and_Friends_Silver',
-            'THELM_Deep_Sea_Gold',
-            'THELM_Ghost_Captain_Blue',
-            'THELM_Ghost_Captain_Green',
-            'THELM_Helm_Blub_and_Friends_Gold',
-            'THELM_Hyper_Pressure',
-            'THELM_Hyper_Pressure_Blubsessed',
-            'THELM_Hyper_Pressure_Trifecta',
-            'THELM_Hyper_Pressure_X',
-            'THELM_King_Blub',
-            'THELM_Navy_Seal',
-            'THELM_RustBucketBlue',
-            'THELM_RustBucketRed',
-            'THELM_RustBucketViolet',
-            'THELM_RustBucketYellow'
-          ],
-          numbers: ['1_0000', '2_0001', '3_0002', '4_0003', '6_0005', '7_0006']
-        }
-      };
-
+    /************************************************
+     * 3) Build a Grouped Object of All Images
+     ************************************************/
+    async function getGroupedImages() {
+      // Generate all possible paths
       const paths = [];
-
-      // Generate paths for each folder group.
       Object.values(folderGroups).forEach(group => {
         group.folders.forEach(folder => {
           group.numbers.forEach(num => {
             paths.push(`images/${folder}/${num}.png`);
           });
-          // For THELM folders, add a profile headshot.
+          // If folder starts with THELM_, add a profile headshot
           if (folder.startsWith('THELM_')) {
             paths.push(`images/${folder}/Profile_Headshot_0004.png`);
           }
         });
       });
 
-      return paths;
-    }
-
-    // Sort images by grouping them by folder and then by filename number.
-    function sortImages(imageList) {
-      const groupedImages = {};
-      imageList.forEach(imagePath => {
-        const parts = imagePath.split('/');
+      // Group by folder
+      const grouped = {};
+      for (const path of paths) {
+        const parts = path.split('/');
         const folder = parts[parts.length - 2];
-        if (!groupedImages[folder]) {
-          groupedImages[folder] = [];
-        }
-        groupedImages[folder].push(imagePath);
-      });
+        if (!grouped[folder]) grouped[folder] = [];
+        grouped[folder].push(path);
+      }
 
-      const sortedFolders = Object.keys(groupedImages).sort();
-
-      sortedFolders.forEach(folder => {
-        groupedImages[folder].sort((a, b) => {
+      // Sort each folder's images
+      for (const folder in grouped) {
+        grouped[folder].sort((a, b) => {
           const fileA = a.split('/').pop();
           const fileB = b.split('/').pop();
-          
+
+          // Extract the numeric parts from the filenames
           const matchA = fileA.match(/(\d+)_/);
           const matchB = fileB.match(/(\d+)_/);
           const numA = matchA ? parseInt(matchA[1]) : 0;
           const numB = matchB ? parseInt(matchB[1]) : 0;
           if (numA !== numB) return numA - numB;
-          
+
           const matchSecA = fileA.match(/_(\d+)\./);
           const matchSecB = fileB.match(/_(\d+)\./);
           const secA = matchSecA ? parseInt(matchSecA[1]) : 0;
           const secB = matchSecB ? parseInt(matchSecB[1]) : 0;
           return secA - secB;
         });
-      });
+      }
 
-      const sortedImages = [];
-      sortedFolders.forEach(folder => {
-        groupedImages[folder].forEach(filepath => {
-          sortedImages.push(filepath);
-        });
-      });
-
-      return sortedImages;
+      return grouped;
     }
 
-    // Create a photo plane with a custom shader material that applies the dissolve effect.
+    /************************************************
+     * 4) UI for Folder Selection
+     ************************************************/
+    let groupedImages = {};   // Holds all images grouped by folder
+    let images = [];          // Currently selected folder's images
+
+    function createFolderList(folderNames) {
+      const folderListDiv = document.getElementById('folder-list');
+      folderListDiv.innerHTML = ''; // Clear any existing buttons
+
+      folderNames.forEach(folder => {
+        const btn = document.createElement('button');
+        // Display underscores as spaces
+        btn.textContent = folder.replace(/_/g, ' ');
+        btn.addEventListener('click', () => {
+          // Switch to this folder
+          images = groupedImages[folder];
+          currentIndex = 0;
+          loadPhotos();
+        });
+        folderListDiv.appendChild(btn);
+      });
+    }
+
+    /************************************************
+     * 5) Create Photo Plane (No Custom Shader)
+     ************************************************/
     function createPhotoPlane(texture, position) {
       const imageAspect = texture.image.width / texture.image.height;
       const displayWidth = 3;
       const displayHeight = displayWidth / imageAspect;
-      
+
       const geometry = new THREE.PlaneGeometry(displayWidth, displayHeight);
-      const material = new THREE.ShaderMaterial({
-        uniforms: {
-          tDiffuse: { value: texture },
-          dissolve: { value: 0.0 },
-          pixelSize: { value: 50.0 }
-        },
-        vertexShader: dissolveVertexShader,
-        fragmentShader: dissolveFragmentShader,
+      // Use a basic material (no dissolve/fade shader)
+      const material = new THREE.MeshBasicMaterial({
+        map: texture,
         transparent: true
       });
-      
+
       const plane = new THREE.Mesh(geometry, material);
       plane.position.copy(position);
-      // Save the base rotation for combining GSAP animations with mouse input.
       plane.userData.baseRotation = plane.rotation.y;
       return plane;
     }
 
-    // Compute the position of a photo based on a parameter t.
     function getPhotoPosition(t) {
+      // Simple arrangement: left = -1, center = 0, right = +1
+      // multiplied by some factor for spacing
       const x = t * 4;
       const z = -Math.abs(t) * 2;
       return new THREE.Vector3(x, 0, z);
     }
 
-    // Helper: Load a texture using a promise.
-    function loadTexturePromise(url) {
+    // Helper to load a texture with a Promise
+    const textureLoader = new THREE.TextureLoader();
+    function loadTexture(url) {
       return new Promise((resolve, reject) => {
         textureLoader.load(url, resolve, undefined, reject);
       });
     }
 
-    // Load the three photos (previous, current, next) and add them to the scene.
-    async function loadPhotos() {
-      // Remove existing photos.
-      photoObjects.forEach(obj => scene.remove(obj));
-      photoObjects.length = 0;
+    /************************************************
+     * 6) Photo Loading
+     ************************************************/
+    let photoObjects = [];
+    let currentIndex = 0;
+    let isAnimating = false;
 
+    async function loadPhotos() {
+      // Remove existing photos
+      photoObjects.forEach(obj => scene.remove(obj));
+      photoObjects = [];
+
+      // If no images in this folder, just return
+      if (!images || images.length === 0) return;
+
+      // Indices for prev, current, next
       const indices = [
         (currentIndex - 1 + images.length) % images.length,
         currentIndex,
@@ -238,12 +257,12 @@
       ];
 
       try {
-        const textures = await Promise.all(indices.map(index => loadTexturePromise(images[index])));
-        textures.forEach((texture, i) => {
+        const texArray = await Promise.all(indices.map(i => loadTexture(images[i])));
+        texArray.forEach((texture, i) => {
           const position = getPhotoPosition(i - 1);
           const photo = createPhotoPlane(texture, position);
           photo.rotation.y = (i - 1) * -0.2;
-          photo.userData.baseRotation = photo.rotation.y; // Set the initial base rotation.
+          photo.userData.baseRotation = photo.rotation.y;
           scene.add(photo);
           photoObjects.push(photo);
         });
@@ -252,12 +271,14 @@
       }
     }
 
-    // Animate the transition when navigating between images.
+    /************************************************
+     * 7) Navigation (Simple Slide, No Fade)
+     ************************************************/
     function animateTransition(direction) {
       if (isAnimating) return;
       isAnimating = true;
 
-      const duration = 1.5;
+      const duration = 1.0;
       const tl = gsap.timeline({
         onComplete: () => {
           isAnimating = false;
@@ -266,22 +287,12 @@
         }
       });
 
-      // Apply dissolve effect on the center photo.
-      if (photoObjects[1]) {
-        tl.to(photoObjects[1].material.uniforms.dissolve, {
-          value: 1.0,
-          duration: duration * 0.5,
-          ease: "power1.in"
-        }, 0);
-      }
-
-      // Animate side photos (left and right) to new positions and rotations.
-      [photoObjects[0], photoObjects[2]].forEach((photo, i) => {
+      // Slide the three planes left/right
+      [photoObjects[0], photoObjects[1], photoObjects[2]].forEach((photo, i) => {
         if (!photo) return;
-        
-        const posIndex = (i === 0 ? 0 : 2);
-        const targetPos = getPhotoPosition(posIndex - 1 - direction);
-        const targetRot = (posIndex - 1 - direction) * -0.2;
+        const posIndex = i - 1; // -1, 0, 1
+        const targetPos = getPhotoPosition(posIndex - direction);
+        const targetRot = (posIndex - direction) * -0.2;
 
         tl.to(photo.position, {
           x: targetPos.x,
@@ -291,44 +302,13 @@
           ease: "power2.inOut"
         }, 0);
 
-        // Animate the baseRotation property so mouse offset can be added later.
-        tl.to(photo.userData, {
-          baseRotation: targetRot,
+        tl.to(photo.rotation, {
+          y: targetRot,
           duration: duration,
           ease: "power2.inOut"
         }, 0);
       });
     }
-
-    // Initialize
-    let images = [];
-    async function initViewer() {
-      camera.position.z = 5;
-      images = await getImagePaths();
-      images = sortImages(images);
-      loadPhotos();
-    }
-
-    // Mouse movement handling to add a subtle parallax effect.
-    let mouseX = 0;
-    let mouseY = 0;
-    document.addEventListener('mousemove', (event) => {
-      mouseX = (event.clientX - window.innerWidth / 2) / 200;
-      mouseY = (event.clientY - window.innerHeight / 2) / 200;
-    });
-
-    // Navigation controls via mouse clicks.
-    renderer.domElement.addEventListener('click', (event) => {
-      const x = event.clientX / window.innerWidth;
-      if (x < 0.3) navigate(-1);
-      else if (x > 0.7) navigate(1);
-    });
-
-    // Navigation controls via arrow keys.
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'ArrowLeft') navigate(-1);
-      if (event.key === 'ArrowRight') navigate(1);
-    });
 
     function navigate(direction) {
       if (!isAnimating) {
@@ -336,28 +316,73 @@
       }
     }
 
-    // Animation loop: Update photo rotations with mouse offsets.
+    /************************************************
+     * 8) Interaction (Mouse, Click, Keys)
+     ************************************************/
+    let mouseX = 0;
+    let mouseY = 0;
+
+    // Subtle parallax rotation with mouse
+    document.addEventListener('mousemove', event => {
+      mouseX = (event.clientX - window.innerWidth / 2) / 200;
+      mouseY = (event.clientY - window.innerHeight / 2) / 200;
+    });
+
+    // Click left or right side of the screen to navigate
+    renderer.domElement.addEventListener('click', event => {
+      const x = event.clientX / window.innerWidth;
+      if (x < 0.3) navigate(-1);
+      else if (x > 0.7) navigate(1);
+    });
+
+    // Keyboard arrow navigation
+    document.addEventListener('keydown', event => {
+      if (event.key === 'ArrowLeft') navigate(-1);
+      if (event.key === 'ArrowRight') navigate(1);
+    });
+
+    /************************************************
+     * 9) Animation Loop
+     ************************************************/
     function animate() {
       requestAnimationFrame(animate);
+
       photoObjects.forEach(photo => {
-        if (photo) {
-          // Combine the base rotation (controlled by GSAP) with mouse offset.
-          photo.rotation.y = photo.userData.baseRotation + mouseX * 0.05;
-          photo.rotation.x = mouseY * 0.05;
-        }
+        if (!photo) return;
+        // Combine base rotation with mouse offset
+        photo.rotation.y = photo.userData.baseRotation + mouseX * 0.05;
+        photo.rotation.x = mouseY * 0.05;
       });
+
       renderer.render(scene, camera);
     }
 
-    // Adjust scene on window resize.
+    /************************************************
+     * 10) Resize Handling
+     ************************************************/
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // Start the viewer.
-    initViewer();
+    /************************************************
+     * 11) Initialize Everything
+     ************************************************/
+    async function init() {
+      groupedImages = await getGroupedImages();
+      const folderNames = Object.keys(groupedImages).sort();
+      createFolderList(folderNames);
+
+      // Default to the first folder in the list (if any)
+      if (folderNames.length > 0) {
+        images = groupedImages[folderNames[0]];
+        currentIndex = 0;
+        loadPhotos();
+      }
+    }
+
+    init();
     animate();
   </script>
 </body>
