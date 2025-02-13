@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Simple Image Viewer with Loading Bar</title>
+  <title>Image Viewer – Smooth Transitions</title>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- Three.js and GSAP libraries -->
@@ -14,7 +14,6 @@
       background: #000;
       font-family: sans-serif;
     }
-
     /* Folder list styling */
     #folder-list {
       position: absolute;
@@ -43,7 +42,6 @@
     #folder-list button:hover {
       background: #444;
     }
-
     /* Progress bar container */
     #progress-container {
       position: absolute;
@@ -70,7 +68,6 @@
 <body>
   <!-- Folder list (left side) -->
   <div id="folder-list"></div>
-
   <!-- Progress bar (top center) -->
   <div id="progress-container">
     <div id="progress-bar"></div>
@@ -96,7 +93,7 @@
     /************************************************
      * 2) Folder/Path Definitions
      ************************************************/
-    // Adjust these to match your actual folders
+    // Adjust these to match your actual folder names exactly.
     const folderGroups = {
       fangAndNeo: {
         folders: [
@@ -167,14 +164,14 @@
           group.numbers.forEach(num => {
             paths.push(`images/${folder}/${num}.png`);
           });
-          // If folder starts with THELM_, add a profile headshot
+          // If folder starts with THELM_, add a profile headshot.
           if (folder.startsWith('THELM_')) {
             paths.push(`images/${folder}/Profile_Headshot_0004.png`);
           }
         });
       });
 
-      // Group them by folder
+      // Group them by folder.
       const grouped = {};
       for (const path of paths) {
         const parts = path.split('/');
@@ -183,13 +180,12 @@
         grouped[folder].push(path);
       }
 
-      // Sort each folder's images
+      // Sort each folder's images.
       for (const folder in grouped) {
         grouped[folder].sort((a, b) => {
           const fileA = a.split('/').pop();
           const fileB = b.split('/').pop();
 
-          // Extract the numeric parts from the filenames
           const matchA = fileA.match(/(\d+)_/);
           const matchB = fileB.match(/(\d+)_/);
           const numA = matchA ? parseInt(matchA[1]) : 0;
@@ -215,10 +211,9 @@
 
       folderNames.forEach(folder => {
         const btn = document.createElement('button');
-        // Display underscores as spaces
+        // Replace underscores with spaces for display.
         btn.textContent = folder.replace(/_/g, ' ');
         btn.addEventListener('click', () => {
-          // Switch to this folder
           loadFolderTextures(folder);
         });
         folderListDiv.appendChild(btn);
@@ -257,11 +252,11 @@
     }
 
     async function loadFolderTextures(folder) {
-      // If already loaded, just switch
+      // If textures already preloaded, simply switch.
       if (loadedTextures[folder]) {
         currentFolderName = folder;
         currentIndex = 0;
-        loadPhotos();
+        updatePhotoObjects();
         return;
       }
 
@@ -272,7 +267,6 @@
       const textures = new Array(filePaths.length);
       let loadedCount = 0;
 
-      // Load each texture and update progress
       await Promise.all(filePaths.map((path, i) =>
         loadTexture(path).then(tex => {
           textures[i] = tex;
@@ -285,22 +279,19 @@
         })
       ));
 
-      // Store the loaded textures
       loadedTextures[folder] = textures;
       hideProgressBar();
 
-      // Switch to this folder
       currentFolderName = folder;
       currentIndex = 0;
-      loadPhotos();
+      updatePhotoObjects();
     }
 
     /************************************************
-     * 7) Create Photo Plane (No Dissolve)
+     * 7) Create Photo Plane (Basic Material)
      ************************************************/
     function createPhotoPlane(texture, position, isCenter = false) {
       const imageAspect = texture.image.width / texture.image.height;
-      // Default size
       const displayWidth = 3;
       const displayHeight = displayWidth / imageAspect;
 
@@ -313,59 +304,79 @@
       const plane = new THREE.Mesh(geometry, material);
       plane.position.copy(position);
       plane.userData.baseRotation = plane.rotation.y;
-
-      // Scale up the center image
+      // Set scale: center image is bigger.
       if (isCenter) {
-        plane.scale.set(2, 2, 1); // 2x bigger
+        plane.scale.set(2, 2, 1);
+      } else {
+        plane.scale.set(1, 1, 1);
       }
       return plane;
     }
 
+    // Returns a 3D position given a t value (-1 for left, 0 for center, 1 for right)
     function getPhotoPosition(t) {
-      // t: -1 => left, 0 => center, 1 => right
       const x = t * 4;
       const z = -Math.abs(t) * 2;
       return new THREE.Vector3(x, 0, z);
     }
 
     /************************************************
-     * 8) Loading Photos (Previous, Current, Next)
+     * 8) Update Photo Objects In-Place
+     * Sets textures, positions, rotations, and scales based on currentIndex.
      ************************************************/
-    let currentFolderName = '';
-    let currentIndex = 0;
-    let photoObjects = [];
-    let isAnimating = false;
-
-    function loadPhotos() {
-      // Remove existing photos from scene
-      photoObjects.forEach(obj => scene.remove(obj));
-      photoObjects = [];
-
+    function updatePhotoObjects() {
       const texArray = loadedTextures[currentFolderName];
-      if (!texArray || texArray.length === 0) return;
-
-      // Indices for prev, current, next
+      if (!texArray) return;
       const length = texArray.length;
+      // Compute indices for previous, current, and next images.
       const indices = [
         (currentIndex - 1 + length) % length,
         currentIndex,
         (currentIndex + 1) % length
       ];
 
-      indices.forEach((idx, i) => {
-        const texture = texArray[idx];
-        const position = getPhotoPosition(i - 1);
-        const isCenter = (i === 1);
-        const photo = createPhotoPlane(texture, position, isCenter);
-        photo.rotation.y = (i - 1) * -0.2;
-        photo.userData.baseRotation = photo.rotation.y;
-        scene.add(photo);
-        photoObjects.push(photo);
-      });
+      // If photoObjects have not been created yet, create them.
+      if (!photoObjects || photoObjects.length !== 3) {
+        photoObjects = [];
+        indices.forEach((idx, i) => {
+          const isCenter = (i === 1);
+          const pos = getPhotoPosition(i - 1);
+          const plane = createPhotoPlane(texArray[idx], pos, isCenter);
+          // Set an initial rotation based on position.
+          plane.rotation.y = (i - 1) * -0.2;
+          plane.userData.baseRotation = plane.rotation.y;
+          scene.add(plane);
+          photoObjects.push(plane);
+        });
+      } else {
+        // Update the existing photoObjects.
+        photoObjects[0].material.map = texArray[indices[0]];
+        photoObjects[1].material.map = texArray[indices[1]];
+        photoObjects[2].material.map = texArray[indices[2]];
+
+        photoObjects[0].position.copy(getPhotoPosition(-1));
+        photoObjects[1].position.copy(getPhotoPosition(0));
+        photoObjects[2].position.copy(getPhotoPosition(1));
+
+        // Reset rotations.
+        photoObjects[0].rotation.y = -0.2;
+        photoObjects[1].rotation.y = 0;
+        photoObjects[2].rotation.y = 0.2;
+
+        // Set scales: center is 2, sides are 1.
+        photoObjects[0].scale.set(1, 1, 1);
+        photoObjects[1].scale.set(2, 2, 1);
+        photoObjects[2].scale.set(1, 1, 1);
+
+        // Update base rotations.
+        photoObjects[0].userData.baseRotation = photoObjects[0].rotation.y;
+        photoObjects[1].userData.baseRotation = photoObjects[1].rotation.y;
+        photoObjects[2].userData.baseRotation = photoObjects[2].rotation.y;
+      }
     }
 
     /************************************************
-     * 9) Navigation (Simple Slide, No Fade)
+     * 9) Navigation: Smooth Slide with Scale Animation
      ************************************************/
     function animateTransition(direction) {
       if (isAnimating) return;
@@ -374,18 +385,23 @@
       const duration = 1.0;
       const tl = gsap.timeline({
         onComplete: () => {
-          isAnimating = false;
           const length = loadedTextures[currentFolderName].length;
           currentIndex = (currentIndex + direction + length) % length;
-          loadPhotos();
+          // Update textures and reset positions/scales without recreating objects.
+          updatePhotoObjects();
+          isAnimating = false;
         }
       });
 
+      // Animate each of the three photo objects.
       [photoObjects[0], photoObjects[1], photoObjects[2]].forEach((photo, i) => {
         if (!photo) return;
-        const posIndex = i - 1; // -1, 0, 1
-        const targetPos = getPhotoPosition(posIndex - direction);
-        const targetRot = (posIndex - direction) * -0.2;
+        const posIndex = i - 1; // initial positions: -1, 0, 1
+        const newPos = posIndex - direction; // target position index
+        const targetPos = getPhotoPosition(newPos);
+        const targetRot = newPos * -0.2;
+        // Determine target scale: center (newPos === 0) should be 2, others 1.
+        const targetScale = (newPos === 0) ? 2 : 1;
 
         tl.to(photo.position, {
           x: targetPos.x,
@@ -397,6 +413,13 @@
 
         tl.to(photo.rotation, {
           y: targetRot,
+          duration: duration,
+          ease: "power2.inOut"
+        }, 0);
+
+        tl.to(photo.scale, {
+          x: targetScale,
+          y: targetScale,
           duration: duration,
           ease: "power2.inOut"
         }, 0);
@@ -414,21 +437,17 @@
      ************************************************/
     let mouseX = 0;
     let mouseY = 0;
-
-    // Subtle parallax rotation with mouse
     document.addEventListener('mousemove', event => {
       mouseX = (event.clientX - window.innerWidth / 2) / 200;
       mouseY = (event.clientY - window.innerHeight / 2) / 200;
     });
 
-    // Click left or right side of the screen to navigate
     renderer.domElement.addEventListener('click', event => {
       const x = event.clientX / window.innerWidth;
       if (x < 0.3) navigate(-1);
       else if (x > 0.7) navigate(1);
     });
 
-    // Keyboard arrow navigation
     document.addEventListener('keydown', event => {
       if (event.key === 'ArrowLeft') navigate(-1);
       if (event.key === 'ArrowRight') navigate(1);
@@ -440,9 +459,9 @@
     function animate() {
       requestAnimationFrame(animate);
 
+      // Add a subtle parallax effect.
       photoObjects.forEach(photo => {
         if (!photo) return;
-        // Combine base rotation with mouse offset
         photo.rotation.y = photo.userData.baseRotation + mouseX * 0.05;
         photo.rotation.x = mouseY * 0.05;
       });
@@ -460,16 +479,18 @@
     });
 
     /************************************************
-     * 13) Initialize Everything
+     * 13) Initialization
      ************************************************/
+    let photoObjects = [];
+    let currentFolderName = '';
+    let currentIndex = 0;
+    let isAnimating = false;
+
     function init() {
       groupedImages = buildGroupedImagePaths();
-
-      // Create folder list
       const folderNames = Object.keys(groupedImages).sort();
       createFolderListUI(folderNames);
 
-      // Optionally, auto-load the first folder
       if (folderNames.length > 0) {
         loadFolderTextures(folderNames[0]);
       }
