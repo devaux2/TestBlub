@@ -438,8 +438,8 @@
     let mouseX = 0;
     let mouseY = 0;
     document.addEventListener('mousemove', event => {
-      mouseX = (event.clientX - window.innerWidth / 2) / 200;
-      mouseY = (event.clientY - window.innerHeight / 2) / 200;
+      mouseX = (event.clientX - window.innerWidth / 2) / 400;
+      mouseY = (event.clientY - window.innerHeight / 2) / 400;
     });
 
     renderer.domElement.addEventListener('click', event => {
@@ -462,8 +462,8 @@
       // Add a subtle parallax effect.
       photoObjects.forEach(photo => {
         if (!photo) return;
-        photo.rotation.y = photo.userData.baseRotation + mouseX * 0.05;
-        photo.rotation.x = mouseY * 0.05;
+        photo.rotation.y = photo.userData.baseRotation + mouseX * 0.02;
+        photo.rotation.x = mouseY * 0.02;
       });
 
       renderer.render(scene, camera);
